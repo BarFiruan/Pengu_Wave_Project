@@ -1,28 +1,62 @@
-import { useState } from "react";
-import mockEvents from "../../data/mock_events.json";
-import { SecurityEvent } from "../types";
+/**
+ * Security events list and detail view (data from GET /api/events).
+ *
+ * Event text is rendered as plain React children—no dangerouslySetInnerHTML.
+ * The assignment starter had an XSS sink in the search highlight and
+ * description panel; see THREAT_MODEL.md > "Cross-site scripting (XSS)".
+ */
+
+import { useEffect, useState } from "react";
+import { getEvents } from "../api/events";
+import { ApiError } from "../api/client";
+import type { SecurityEvent } from "../types";
 
 export default function EventsPage() {
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState("ALL");
   const [selectedEvent, setSelectedEvent] = useState<SecurityEvent | null>(null);
+  const [events, setEvents] = useState<SecurityEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const events = mockEvents as SecurityEvent[];
-
-  const filtered = events.filter((e) => {
-    const matchesSearch =
-      e.title.toLowerCase().includes(search.toLowerCase()) ||
-      e.description.toLowerCase().includes(search.toLowerCase()) ||
-      e.assetHostname.toLowerCase().includes(search.toLowerCase());
-    const matchesSeverity = severityFilter === "ALL" || e.severity === severityFilter;
-    return matchesSearch && matchesSeverity;
-  });
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await getEvents({
+          severity: severityFilter !== "ALL" ? severityFilter : undefined,
+          search: search || undefined,
+        });
+        if (!cancelled) {
+          setEvents(data);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.message : "Failed to load events");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [search, severityFilter]);
 
   const severityColor = (s: string) => {
     if (s === "HIGH") return "red";
     if (s === "MEDIUM") return "orange";
     return "green";
   };
+
+  if (loading) {
+    return <p style={{ color: "#666" }}>Loading events…</p>;
+  }
+
+  if (error) {
+    return <p style={{ color: "#c00" }}>{error}</p>;
+  }
 
   return (
     <div className="page-container">
@@ -50,12 +84,8 @@ export default function EventsPage() {
 
       {search && (
         <p>
-          <span
-            dangerouslySetInnerHTML={{
-              __html: "Showing results for: <strong>" + search + "</strong>",
-            }}
-          />
-          {" "}({filtered.length} events)
+          {/* Plain text + <strong>; we intentionally do not use dangerouslySetInnerHTML here. */}
+          Showing results for: <strong>{search}</strong> ({events.length} events)
         </p>
       )}
 
@@ -70,7 +100,7 @@ export default function EventsPage() {
           </tr>
         </thead>
         <tbody>
-          {filtered.map((event) => (
+          {events.map((event) => (
             <tr
               key={event.id}
               onClick={() => setSelectedEvent(event)}
@@ -94,12 +124,15 @@ export default function EventsPage() {
         </tbody>
       </table>
 
-      {filtered.length === 0 && <p style={{ color: "#999" }}>No events found.</p>}
+      {events.length === 0 && <p style={{ color: "#999" }}>No events found.</p>}
 
       <div style={{ marginTop: 12 }}>
         <button
+          type="button"
           onClick={() => {
-            const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: "application/json" });
+            const blob = new Blob([JSON.stringify(events, null, 2)], {
+              type: "application/json",
+            });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
@@ -113,12 +146,11 @@ export default function EventsPage() {
         </button>
       </div>
 
-      {/* Inline event detail */}
       {selectedEvent && (
         <div className="event-detail">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h2>{selectedEvent.title}</h2>
-            <button onClick={() => setSelectedEvent(null)} style={{ cursor: "pointer" }}>
+            <button type="button" onClick={() => setSelectedEvent(null)} style={{ cursor: "pointer" }}>
               Close
             </button>
           </div>
@@ -131,12 +163,8 @@ export default function EventsPage() {
           <p>
             <strong>Description:</strong>
           </p>
-          {/* render rich text descriptions */}
-          <div
-            ref={(el) => {
-              if (el) el.innerHTML = selectedEvent.description;
-            }}
-          />
+          {/* Description as text, not innerHTML—the starter used innerHTML at this spot. */}
+          <p>{selectedEvent.description}</p>
           <p>
             <strong>Asset:</strong> {selectedEvent.assetHostname} ({selectedEvent.assetIp})
           </p>
@@ -147,7 +175,8 @@ export default function EventsPage() {
             <strong>Tags:</strong> {selectedEvent.tags.join(", ")}
           </p>
           <p>
-            <strong>Timestamp:</strong> {new Date(selectedEvent.timestamp).toLocaleString()}
+            <strong>Timestamp:</strong>{" "}
+            {new Date(selectedEvent.timestamp).toLocaleString()}
           </p>
           <h3>Raw Event Data</h3>
           <pre>{JSON.stringify(selectedEvent, null, 2)}</pre>

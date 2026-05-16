@@ -8,7 +8,7 @@ export interface SecurityEvent {
   assetIp: string;
   sourceIp: string;
   tags: string[];
-  userId: string;
+  userId?: string | null;
 }
 
 export interface User {
@@ -16,5 +16,4 @@ export interface User {
   email: string;
   role: string;
   status: string;
-  password: string;
 }
