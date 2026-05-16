@@ -10,20 +10,71 @@ You need **Node.js 18+**, **Python 3.11+**, and two terminal windows.
 
 ```bash
 cd backend
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"            # or: pip install -r requirements.txt
+pip install -r requirements.txt
 cp .env.example .env               # optional; defaults work for local dev
 uvicorn app.main:app --reload --port 3001
 ```
 
-**Frontend** (UI on http://localhost:5173):
+Leave this terminal running. On first start, copy the **admin password** printed in this window.
+
+Run each command on its **own line** (do not paste the whole block as one line). On macOS use `python3`, not `python`.
+
+### Running the backend (step by step)
+
+**First time:**
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 3001
+```
+
+You should see `Uvicorn running on http://127.0.0.1:3001`. The first run prints an admin password once in this terminal—save it.
+
+**Every time after that** (venv already exists):
+
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload --port 3001
+```
+
+**Check the backend:** open http://localhost:3001/api/health — you should see `{"ok":true}`. API docs: http://localhost:3001/docs
+
+**Stop the backend:** click that terminal and press **Ctrl + C**. You get your shell prompt back. Stopping only ends the server; run `uvicorn` again when you want to start.
+
+**Frontend** (UI on http://localhost:5173) — use a **second** terminal:
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
+Do not run `npm run dev` from the repo root; the app lives in `frontend/`.
+
+**Stop the frontend:** in the frontend terminal, press **Ctrl + C**.
+
+If http://localhost:5173 still loads, Vite is probably still running in another terminal (or the terminal was closed without stopping the server). Try this:
+
+1. Find the terminal tab that shows `VITE` or `npm run dev`, click it, and press **Ctrl + C** again.
+2. Or run in any terminal to free port 5173:
+
+```bash
+lsof -ti :5173 | xargs kill
+```
+
+If it still will not stop:
+
+```bash
+lsof -ti :5173 | xargs kill -9
+```
+
+Stopping the frontend does not stop the backend on port 3001—they are independent.
 
 Open http://localhost:5173 in your browser.
 
