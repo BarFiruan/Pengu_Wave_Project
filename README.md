@@ -1,53 +1,26 @@
 # PenguWave
 
-PenguWave is a security operations portal: authenticated users browse security events, and administrators manage user accounts. The stack is a React frontend (`frontend/`) talking to a FastAPI backend (`backend/`) with a SQLite database. For a plain-language discussion of threats and mitigations, see [THREAT_MODEL.md](THREAT_MODEL.md).
+A security operations portal. Analysts read a feed of security events. Admins manage user accounts.
 
-## 1. How to run the project
+This is a take-home submission. The frontend was provided as a starter; the FastAPI backend, the threat model, and the auth/RBAC plumbing were built on top of it. The threat reasoning lives in [`THREAT_MODEL.md`](./THREAT_MODEL.md).
 
-You need **Node.js 18+**, **Python 3.11+**, and two terminal windows.
+## How to run the project
 
-**Backend** (API on http://localhost:3001):
+You need Node 18+ and Python 3.11+. Open two terminals.
 
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env               # optional; defaults work for local dev
-uvicorn app.main:app --reload --port 3001
-```
-
-Leave this terminal running. On first start, copy the **admin password** printed in this window.
-
-Run each command on its **own line** (do not paste the whole block as one line). On macOS use `python3`, not `python`.
-
-### Running the backend (step by step)
-
-**First time:**
+**Backend** (port 3001):
 
 ```bash
 cd backend
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 3001
-```
-
-You should see `Uvicorn running on http://127.0.0.1:3001`. The first run prints an admin password once in this terminal—save it.
-
-**Every time after that** (venv already exists):
-
-```bash
-cd backend
 source .venv/bin/activate
+pip install -r requirements.txt
 uvicorn app.main:app --reload --port 3001
 ```
 
-**Check the backend:** open http://localhost:3001/api/health — you should see `{"ok":true}`. API docs: http://localhost:3001/docs
+The first time the server starts it creates a SQLite database at `backend/data/penguwave.db`, loads the 50 sample events from `data/mock_events.json`, and creates an admin user. If you haven't set `ADMIN_BOOTSTRAP_PASSWORD` in `backend/.env`, a random password is printed once to this terminal — copy it. Default admin email is `admin@penguwave.io`.
 
-**Stop the backend:** click that terminal and press **Ctrl + C**. You get your shell prompt back. Stopping only ends the server; run `uvicorn` again when you want to start.
-
-**Frontend** (UI on http://localhost:5173) — use a **second** terminal:
+**Frontend** (port 5173, in a second terminal):
 
 ```bash
 cd frontend
@@ -55,94 +28,65 @@ npm install
 npm run dev
 ```
 
-Do not run `npm run dev` from the repo root; the app lives in `frontend/`.
+Open http://localhost:5173 and sign in with the admin email and the printed password. To run the tests: `cd backend && pytest`.
 
-**Stop the frontend:** in the frontend terminal, press **Ctrl + C**.
+The database file persists between restarts, so users you create stay around. Environment variables are documented in `backend/.env.example`.
 
-If http://localhost:5173 still loads, Vite is probably still running in another terminal (or the terminal was closed without stopping the server). Try this:
+## How authentication works
 
-1. Find the terminal tab that shows `VITE` or `npm run dev`, click it, and press **Ctrl + C** again.
-2. Or run in any terminal to free port 5173:
+Logging in is a `POST /api/auth/login` with email and password. The server checks the password against an **argon2** hash (a slow password-hashing algorithm designed to resist guessing). On success it does three things:
 
-```bash
-lsof -ti :5173 | xargs kill
+1. Creates a row in the `sessions` table with a random 32-byte id and a 24-hour expiry.
+2. Returns a cookie: `Set-Cookie: sid=<random>; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400`.
+3. Returns the user's basic info in the body. The password is never in the response.
+
+Every following request includes that cookie automatically — the frontend uses `credentials: "include"`, so the browser handles it. The server looks the cookie up, checks the expiry, and attaches the user to the request. Logout deletes the row and clears the cookie, so the session is gone immediately, not just expired in the future.
+
+Two properties matter:
+
+- **`HttpOnly` means JavaScript can never read the cookie.** Even if a cross-site scripting (XSS) bug slipped in, no script on the page can steal the session.
+- **The server is the only thing that decides "logged in".** The frontend just calls `GET /api/auth/me` to find out who you are. It doesn't trust anything stored in the browser.
+
+Login is rate-limited to 10 attempts per minute per IP. Every failure returns the same generic `"Invalid email or password"` — whether the email exists, the password is wrong, or the account is disabled — so the response can't be used to enumerate accounts.
+
+## How authorization is enforced
+
+There are three roles: `admin`, `analyst`, and `viewer`. Logged-in users with any role can read events. Only admins can manage users.
+
+The check lives on the **server**, not in the frontend. The users router declares it once at the top:
+
+```python
+router = APIRouter(
+    prefix="/api/users",
+    dependencies=[Depends(require_role("admin"))],
+)
 ```
 
-If it still will not stop:
+Every route under `/api/users` inherits this. A non-admin hitting any of them gets `403`. The frontend has a `RequireRole` component that hides the Users page from non-admins, but that's only convenience — a user typing `/users` into the URL or calling the API with `curl` still gets the same `403`.
 
-```bash
-lsof -ti :5173 | xargs kill -9
-```
+Two extra protections against role abuse:
 
-Stopping the frontend does not stop the backend on port 3001—they are independent.
+- **No mass-assignment.** `PATCH /api/users/:id` only accepts `role` and `status`. Sending something like `{"role": "admin", "password_hash": "haha"}` is rejected with `422` before any handler code runs.
+- **No locking yourself out.** An admin cannot delete themselves, and cannot demote themselves if they are the last active admin.
 
-Open http://localhost:5173 in your browser.
+Passwords and password hashes are never returned in any response — every user-returning endpoint uses a public schema that simply doesn't have a password field.
 
-On the **first** backend start, if the database has no users yet, the server creates an admin account and prints credentials to the terminal:
+## How I'd deploy this securely in production
 
-- Email: `admin@penguwave.io` (override with `ADMIN_EMAIL` in `backend/.env`)
-- Password: set `ADMIN_BOOTSTRAP_PASSWORD` in `.env`, or copy the random password printed once to stdout
+The code already does the security-critical work. Production is mostly about wrapping it in real infrastructure.
 
-The server also loads 50 sample events from `data/mock_events.json` into the database when the events table is empty. Data is stored in `backend/data/penguwave.db` (gitignored) and survives restarts. To confirm: log in as admin, create a user on **Users**, stop uvicorn (`Ctrl+C`), start it again, and verify the user still exists.
+**TLS everywhere.** Put the app behind a load balancer that terminates HTTPS. Turn on `COOKIE_SECURE=true` so the browser refuses to send the session cookie over plain HTTP, and add an HSTS header at the load balancer.
 
-**Environment variables** (see `backend/.env.example`): `DATABASE_URL`, `CORS_ORIGINS`, `COOKIE_SECURE` (use `false` on localhost), `ADMIN_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD`, `ENVIRONMENT`. Session lifetime defaults to 24 hours (`session_ttl_hours` in `backend/app/config.py`).
+**Run the backend properly.** Replace `uvicorn --reload` with `gunicorn -k uvicorn.workers.UvicornWorker -w 4`, running as a non-root user inside a minimal container image.
 
-**Tests:** `cd backend && pytest` runs security-focused API tests (auth failures, RBAC, rate limiting, mass-assignment rejection, and similar cases).
+**Real database.** Swap SQLite for managed Postgres (RDS or Cloud SQL). SQLModel makes the switch a one-line change to `DATABASE_URL`. The database lives in a private subnet, has encryption at rest and in transit, and gets daily backups with a tested restore process.
 
-API reference: [docs/api_contract.md](docs/api_contract.md). Interactive docs: http://localhost:3001/docs while the backend is running.
+**Real secrets.** No `.env` files in production. Pull database credentials, signing keys, and the admin bootstrap password from a secrets manager (AWS Secrets Manager, HashiCorp Vault). The container image contains no secrets.
 
-## 2. How authentication works
+**Frontend behind a CDN.** Build the static output with `npm run build` and serve it from a CDN. The CDN adds a strict `Content-Security-Policy` header that disallows inline scripts — that's the safety net if anyone ever accidentally reintroduces an XSS sink.
 
-The original assignment API contract described a **Bearer token** in the `Authorization` header. This implementation uses an **httpOnly cookie** named `sid` instead, which JavaScript cannot read—so a cross-site scripting bug is less likely to steal a session. The updated contract in `docs/api_contract.md` documents this choice.
+**Observability.** Ship the structured JSON logs (already produced by `structlog`) to a SIEM. Expose Prometheus metrics. Alert on a 5xx spike, a login-failure spike, and on every `PATCH` or `DELETE` to `/api/users/*` — admin actions on accounts are worth knowing about even when legitimate.
 
-**Sign-in flow:**
+**Rate limiting at scale.** The current limiter keeps counts in process memory. With multiple workers it needs Redis as a shared backend so all replicas share the same counter.
 
-1. The browser sends `POST /api/auth/login` with `{ email, password }` and `credentials: "include"` so the cookie can be stored.
-2. The backend validates the body with Pydantic, looks up the user by email (stored lowercased), and checks the password with **argon2** (a slow password-hashing algorithm designed to resist guessing).
-3. On success, the server creates a row in the `session` table with a random session id (`secrets.token_hex(32)`), sets the `sid` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age` from session TTL), and returns `{ "user": { id, email, role, status } }`. The response never includes a token string or a password.
-4. On failure (wrong email, wrong password, or disabled account), the server always returns the same message: `"Invalid email or password"`. That avoids telling an attacker whether an email is registered (**user enumeration**).
-5. Login is rate-limited to **10 requests per minute per IP** (`slowapi` on the login route).
-
-**Staying signed in:** On load, the React app calls `GET /api/auth/me` (`frontend/src/auth/AuthContext.tsx`). The backend reads the `sid` cookie, loads the session, checks expiry, and returns the user—or **401** if the cookie is missing, expired, or tied to a disabled account.
-
-**Sign-out:** `POST /api/auth/logout` deletes the session row and clears the cookie.
-
-## 3. How authorization is enforced
-
-**Role-based access control (RBAC)** means each user has a role that determines what they may do. There are three roles: `admin`, `analyst`, and `viewer`.
-
-| Action | admin | analyst | viewer |
-|--------|-------|---------|--------|
-| View events (`GET /api/events`) | yes | yes | yes |
-| Manage users (`/api/users` …) | yes | no | no |
-
-**The server is the authority.** Every `/api/users` route is mounted with `dependencies=[Depends(require_role("admin"))]` on the router (`backend/app/routers/users.py`), so a single declaration protects all user-management endpoints. The `current_user` and `require_role` helpers in `backend/app/deps.py` read the session cookie first; unauthenticated callers get **401**, authenticated non-admins get **403**.
-
-The frontend adds convenience only: `ProtectedRoute` blocks pages when not logged in, and `RequireRole` hides the **Users** link and page for non-admins. Calling the API directly (for example with `curl`) still hits the same server checks.
-
-**Additional rules enforced in code:**
-
-- **Mass-assignment:** `PATCH /api/users/:id` accepts only `role` and `status` via a Pydantic model with `extra="forbid"`. Extra fields such as `password_hash` are rejected with **422**.
-- Passwords and hashes never appear in JSON responses.
-- An admin cannot delete their own account.
-- An admin cannot demote themselves to a non-admin role if they are the last active admin.
-
-Event endpoints require any authenticated role; they use `current_user` but not `require_role("admin")`.
-
-## 4. How I would deploy this securely in production
-
-No deployment is included in this submission; the following is the approach I would take for a real environment.
-
-**Transport and cookies.** Terminate **TLS** (HTTPS) at a reverse proxy (Nginx or a cloud load balancer). Set `COOKIE_SECURE=true` so the session cookie is only sent over HTTPS, and send an **HSTS** header so browsers prefer HTTPS. Restrict **CORS** to the production frontend origin only.
-
-**Application process.** Run the API with **Gunicorn** and `UvicornWorker` workers—not `uvicorn --reload`. Run the process as a **non-root** user inside a minimal container or VM.
-
-**Data store.** Replace SQLite with **managed PostgreSQL** (SQLModel supports this with a changed `DATABASE_URL`). Use encryption at rest, restricted network access, automated **daily backups**, and a dedicated DB user with least privilege.
-
-**Secrets.** Load `ADMIN_BOOTSTRAP_PASSWORD`, database credentials, and similar values from a **secrets manager** (AWS Secrets Manager, HashiCorp Vault, etc.), not from a committed `.env` file. Rotate credentials on a schedule.
-
-**Frontend hardening.** Serve the built static assets behind the same TLS front end. Add a strict **Content-Security-Policy** header to limit where scripts may run, which reduces the impact of XSS if a rendering bug ever appears.
-
-**Operations.** Ship **structured JSON logs** (`structlog` in the backend) to a log aggregator or SIEM, with alerts on elevated 5xx rates and login-failure spikes. Run **`pip-audit`** and **`npm audit`** (or Dependabot) in CI to catch vulnerable dependencies.
-
-For threat context and trade-offs (for example why we rely on `SameSite=Lax` instead of CSRF tokens at this scope), see [THREAT_MODEL.md](THREAT_MODEL.md).
+**CI gates.** Run `pip-audit`, `npm audit`, container scanning, `pytest`, and lint on every push. Block merges on HIGH or CRITICAL CVEs. Dependabot keeps things up to date.
