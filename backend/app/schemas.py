@@ -1,8 +1,7 @@
 """Pydantic request/response models for the HTTP API.
 
 Public schemas deliberately omit password_hash. Input models use
-extra="forbid" where clients must not smuggle extra fields. See
-THREAT_MODEL.md > "Privilege escalation" and "Leaking passwords".
+extra="forbid" where clients must not smuggle extra fields.
 """
 
 import json

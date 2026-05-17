@@ -3,7 +3,7 @@
  * and throws a typed ApiError on non-2xx responses.
  *
  * We send cookies (not a Bearer token in Authorization) because the session
- * sid lives in an httpOnly cookie set by the backend—see THREAT_MODEL.md.
+ * sid lives in an httpOnly cookie set by the backend.
  */
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";

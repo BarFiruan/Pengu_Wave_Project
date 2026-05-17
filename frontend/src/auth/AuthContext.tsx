@@ -2,8 +2,7 @@
  * React context for the logged-in user and auth actions.
  *
  * On mount we call GET /api/auth/me so a valid httpOnly cookie restores the
- * session without storing a token in localStorage. See THREAT_MODEL.md >
- * "Stealing the session cookie".
+ * session without storing a token in localStorage.
  */
 
 import {

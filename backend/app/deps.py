@@ -1,8 +1,7 @@
 """FastAPI dependencies for authentication and role checks.
 
 These run on every protected route before handler code. The server is the
-security boundary; frontend guards are UX only. See THREAT_MODEL.md >
-"Unauthorized API access" and "Privilege escalation".
+security boundary; frontend guards are UX only.
 """
 
 from datetime import UTC, datetime

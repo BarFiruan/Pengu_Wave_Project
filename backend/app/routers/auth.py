@@ -38,7 +38,7 @@ def login(
     """Validate credentials, create a session row, set the sid cookie.
 
   Response body returns the user only—never a token or password. Rate limit
-  slows brute-force guessing. See THREAT_MODEL.md > "Stealing passwords".
+  slows brute-force guessing.
   """
     email = body.email.lower()
     # Look up by lowercased email; we store it lowercased on insert too.

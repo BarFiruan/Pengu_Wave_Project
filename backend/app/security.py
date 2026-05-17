@@ -2,7 +2,7 @@
 
 Passwords are hashed with argon2 (OWASP-recommended). Session cookies are
 httpOnly + SameSite=Lax so JavaScript cannot read them, even if XSS slipped
-through. See THREAT_MODEL.md > "Stealing the session cookie".
+through.
 """
 
 from datetime import UTC, datetime, timedelta

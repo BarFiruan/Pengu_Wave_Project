@@ -21,7 +21,7 @@ export default function WelcomeBanner() {
           </h2>
           <p style={{ margin: 0, color: "#555", fontSize: 13 }}>
             Sign in to view security events. Admins can manage users from the Users page.
-            See <code>README.md</code> and <code>THREAT_MODEL.md</code> for setup and security details.
+            See <code>README.md</code> for setup and security details.
           </p>
         </div>
         <button

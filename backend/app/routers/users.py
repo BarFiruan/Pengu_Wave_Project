@@ -95,7 +95,7 @@ def update_user(
             detail={"error": "User not found"},
         )
 
-    # See THREAT_MODEL.md > "Privilege escalation" (last-admin protection).
+    # Last-admin protection: cannot demote yourself if you are the only active admin.
     if body.role is not None and user.id == current.id and body.role != "admin":
         if _count_active_admins(session) <= 1 and user.status == "active":
             raise HTTPException(

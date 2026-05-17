@@ -3,7 +3,7 @@
  *
  * This is convenience for the user, NOT a security boundary. The server
  * returns 403 on every /api/users request from non-admins regardless of
- * what the frontend renders. See THREAT_MODEL.md > "Privilege escalation".
+ * what the frontend renders.
  */
 
 import type { ReactNode } from "react";

@@ -2,7 +2,7 @@
 
 A security operations portal. Analysts read a feed of security events. Admins manage user accounts.
 
-This is a take-home submission. The frontend was provided as a starter; the FastAPI backend, the threat model, and the auth/RBAC plumbing were built on top of it. The threat reasoning lives in [`THREAT_MODEL.md`](./THREAT_MODEL.md).
+This is a take-home submission. The frontend was provided as a starter; the FastAPI backend and auth/RBAC plumbing were built on top of it.
 
 ## How to run the project
 

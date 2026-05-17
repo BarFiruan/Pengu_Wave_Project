@@ -3,7 +3,7 @@
  *
  * Event text is rendered as plain React children—no dangerouslySetInnerHTML.
  * The assignment starter had an XSS sink in the search highlight and
- * description panel; see THREAT_MODEL.md > "Cross-site scripting (XSS)".
+ * description panel (XSS hardening).
  */
 
 import { useEffect, useState } from "react";
